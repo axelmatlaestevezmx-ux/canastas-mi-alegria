@@ -11,11 +11,9 @@ const MySQLStore = require('express-mysql-session')(session);
 
 const app = express();
 
-// ✅ CORRECCIÓN CRÍTICA: NECESARIO PARA RENDER/PROXY
-// Esto soluciona el problema de que la sesión se pierda inmediatamente después del login.
+// CORRECCIÓN CRÍTICA PARA RENDER/PROXY
 app.set('trust proxy', 1); 
 
-// Usa el puerto de entorno proporcionado por Render o 3000 por defecto
 const port = process.env.PORT || 3000; 
 
 // --- Configuración de la Base de Datos TiDB Cloud (CON SSL) ---
@@ -24,11 +22,10 @@ const DB_CONFIG_TIDB = {
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
-    port: process.env.DB_PORT || 4000, // TiDB Serverless usa 4000
+    port: process.env.DB_PORT || 4000, 
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
-    // *** CONFIGURACIÓN CRÍTICA PARA TI DB CLOUD ***
     ssl: { 
         rejectUnauthorized: false 
     } 
@@ -45,7 +42,7 @@ try {
 
 // --- Configuración del Almacén de Sesiones en MySQL (TiDB) ---
 const sessionStore = new MySQLStore({
-    ...DB_CONFIG_TIDB, // Reutiliza la configuración completa, incluyendo SSL
+    ...DB_CONFIG_TIDB, 
     clearExpired: true,
     checkExpirationInterval: 900000, 
     expiration: 86400000, 
@@ -79,7 +76,6 @@ function requireAuth(req, res, next) {
     if (req.session && req.session.userId) {
         return next();
     } else {
-        // Log para saber si falla la autenticación en /inicio
         console.log(`[DIAGNÓSTICO] Acceso a ruta protegida fallido. Sesión ID: ${req.session.userId}`);
         res.redirect('/login.html');
     }
@@ -121,7 +117,6 @@ app.get('/login', (req, res) => {
 app.post('/login', async (req, res) => {
     const { nombre, telefono } = req.body; 
     
-    // LOG DE DIAGNÓSTICO
     console.log(`[DIAGNÓSTICO] Intentando iniciar sesión para: ${nombre}`); 
     
     try {
@@ -132,12 +127,10 @@ app.post('/login', async (req, res) => {
             return res.status(401).json({ success: false, error: "Nombre de usuario o clave incorrectos." });
         }
         
-        // Success case: Crea la sesión y establece la cookie (esto requiere el trust proxy)
         req.session.userId = rows[0].id_usuario; 
         
         console.log(`[DIAGNÓSTICO] Ingreso exitoso para: ${nombre}. Redireccionando.`); 
         
-        // DEVOLVER JSON DE REDIRECCIÓN.
         res.status(200).json({ success: true, redirect: '/inicio' }); 
         
     } catch (error) {
@@ -161,6 +154,7 @@ app.get('/logout', (req, res) => {
 // ----------------------------------------------------
 
 // RUTA DE SELECCIÓN DE PRODUCTOS (/inicio)
+// ✅ PUNTO 2 CORREGIDO: SE ELIMINA LA SECCIÓN DE "CARRITO DE PEDIDO"
 app.get('/inicio', requireAuth, async (req, res) => {
     try {
         const [canastas] = await pool.execute(`
@@ -220,14 +214,10 @@ app.get('/inicio', requireAuth, async (req, res) => {
                     
                     <hr class="my-5">
 
-                    <h2 class="mb-4">🛒 Carrito de Pedido</h2>
-                    <div id="cart-summary" class="card p-3">
-                        <p>Los ítems añadidos aparecerán en el carrito del navegador. Finaliza tu compra aquí:</p>
-                        <div class="text-end">
-                            <a href="/checkout" id="btn-checkout" class="btn btn-warning btn-lg mt-3">
-                                Proceder al Pago (Checkout)
-                            </a>
-                        </div>
+                    <div class="text-end mb-5">
+                        <a href="/checkout" id="btn-checkout" class="btn btn-warning btn-lg mt-3">
+                            Proceder al Pago (Checkout)
+                        </a>
                     </div>
                 </div>
             </body>
@@ -241,6 +231,7 @@ app.get('/inicio', requireAuth, async (req, res) => {
 });
 
 // RUTA DE CONFIGURACIÓN DE CANASTA
+// ✅ PUNTO 3 CORREGIDO: La lógica de la personalización usa correctamente el límite de la BD
 app.get('/configurar-canasta/:id', requireAuth, async (req, res) => {
     const canastaId = req.params.id;
 
@@ -249,6 +240,11 @@ app.get('/configurar-canasta/:id', requireAuth, async (req, res) => {
         if (canastaRows.length === 0) return res.status(404).send("Canasta no encontrada.");
         const canasta = canastaRows[0];
         canasta.precio_base = parseFloat(canasta.precio_base);
+
+        // Se usa limite_personalizacion del registro de la base de datos
+        const limitePersonalizacion = canasta.limite_personalizacion === null ? 0 : parseInt(canasta.limite_personalizacion);
+        const limiteHtmlText = limitePersonalizacion > 0 ? `${limitePersonalizacion}` : '0';
+
 
         const [dulcesPredefinidos] = await pool.execute(`
             SELECT d.id_dulce, d.nombre, d.precio_unitario, cd.cantidad
@@ -312,11 +308,11 @@ app.get('/configurar-canasta/:id', requireAuth, async (req, res) => {
                                 
                                 <h4>Tu Personalización</h4>
                                 <ul class="list-group mb-3" id="personalizada-items">
-                                    <li class="list-group-item text-muted">Añade hasta ${canasta.limite_personalizacion} dulces extra.</li>
+                                    <li class="list-group-item text-muted">Añade hasta ${limiteHtmlText} dulces extra.</li>
                                 </ul>
                                 
                                 <div class="alert alert-info">
-                                    Límite de dulces extra: <strong id="limite-actual">${canasta.limite_personalizacion}</strong> restantes.
+                                    Límite de dulces extra: <strong id="limite-actual">${limiteHtmlText}</strong> restantes.
                                 </div>
 
                                 <div class="mt-4 text-end">
@@ -342,7 +338,8 @@ app.get('/configurar-canasta/:id', requireAuth, async (req, res) => {
                     const CANASTA_ID = ${canasta.id_canasta};
                     const CANASTA_NOMBRE = "${canasta.nombre}";
                     const PRECIO_BASE = ${canasta.precio_base};
-                    const LIMITE_MAXIMO = ${canasta.limite_personalizacion};
+                    // Usamos el límite dinámico de la BD
+                    const LIMITE_MAXIMO = ${limitePersonalizacion}; 
                     let dulcesPersonalizados = [];
                     let dulcesActuales = 0;
 
@@ -380,14 +377,27 @@ app.get('/configurar-canasta/:id', requireAuth, async (req, res) => {
                         document.getElementById('total-final').textContent = totalFinal.toFixed(2);
                         
                         const btns = document.querySelectorAll('.btn-primary.ms-3');
-                        btns.forEach(btn => {
-                            btn.disabled = restantes <= 0;
-                        });
+                        
+                        // Si el límite es 0, deshabilitar todos los botones de añadir
+                        if (LIMITE_MAXIMO === 0) {
+                            btns.forEach(btn => btn.disabled = true);
+                            document.getElementById('limite-actual').textContent = 'No aplica';
+                        } else {
+                             btns.forEach(btn => {
+                                btn.disabled = restantes <= 0;
+                            });
+                        }
+
 
                         document.querySelector('.btn-lg.btn-success').disabled = restantes < 0;
                     }
 
                     window.addPersonalizado = function(dulce) {
+                        if (LIMITE_MAXIMO === 0) {
+                             alert(\`Esta canasta no permite personalización extra.\`);
+                             return;
+                        }
+
                         if (dulcesActuales >= LIMITE_MAXIMO) {
                             alert(\`¡Atención! Has alcanzado el límite máximo de \${LIMITE_MAXIMO} dulces extras para esta canasta.\`);
                             return;
@@ -412,7 +422,7 @@ app.get('/configurar-canasta/:id', requireAuth, async (req, res) => {
                     }
                     
                     window.confirmarConfiguracion = function() {
-                        if (dulcesActuales > LIMITE_MAXIMO) {
+                        if (dulcesActuales > LIMITE_MAXIMO && LIMITE_MAXIMO > 0) {
                             alert("No puedes confirmar si has excedido el límite.");
                             return;
                         }
@@ -433,7 +443,8 @@ app.get('/configurar-canasta/:id', requireAuth, async (req, res) => {
                         };
 
                         let cart = JSON.parse(sessionStorage.getItem('currentCart') || '[]');
-                        cart.push({ ...canastaFinal, id: Date.now() });
+                        // Usamos un ID único para poder borrar un ítem específico del carrito
+                        cart.push({ ...canastaFinal, id: Date.now() }); 
                         sessionStorage.setItem('currentCart', JSON.stringify(cart));
                         
                         alert("Canasta configurada y añadida al carrito. Procediendo al Checkout.");
@@ -454,11 +465,13 @@ app.get('/configurar-canasta/:id', requireAuth, async (req, res) => {
 // RUTAS DE PAGO Y PEDIDO
 // ----------------------------------------------------
 
+// ✅ PUNTO 4 CORREGIDO: Se añade lógica para borrar en checkout.html
 app.get('/checkout', requireAuth, (req, res) => { res.sendFile(path.join(__dirname, 'public', 'checkout.html')); });
 
 app.get('/resumen', requireAuth, (req, res) => { res.sendFile(path.join(__dirname, 'public', 'resumen.html')); });
 
 app.get('/ticket-pdf/:id', requireAuth, async (req, res) => {
+// ... (El resto del código del ticket-pdf se mantiene igual)
     const pedidoId = req.params.id;
     const userId = req.session.userId;
     let connection;
@@ -527,6 +540,7 @@ app.get('/ticket-pdf/:id', requireAuth, async (req, res) => {
 
 // RUTA POST PARA FINALIZAR PEDIDO (Guarda la transacción en la BD)
 app.post('/finalizar-pedido', requireAuth, async (req, res) => {
+// ... (El resto del código de finalizar-pedido se mantiene igual)
     const { total, id_tipo_pago, items, mensaje_tarjeta, direccion_entrega } = req.body;
     const userId = req.session.userId;
     if (!total || !id_tipo_pago || !items || items.length === 0 || !direccion_entrega) {
