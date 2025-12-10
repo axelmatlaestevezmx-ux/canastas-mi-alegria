@@ -5,7 +5,6 @@ const express = require('express');
 const mysql = require('mysql2/promise');
 const bodyParser = require('body-parser');
 const path = require('path');
-const bcrypt = require('bcrypt');
 const session = require('express-session'); 
 const PDFDocument = require('pdfkit'); 
 const MySQLStore = require('express-mysql-session')(session);
@@ -13,7 +12,6 @@ const MySQLStore = require('express-mysql-session')(session);
 const app = express();
 // Usa el puerto de entorno proporcionado por Render o 3000 por defecto
 const port = process.env.PORT || 3000; 
-const saltRounds = 10; 
 
 // --- Configuración de la Base de Datos TiDB Cloud (CON SSL) ---
 const DB_CONFIG_TIDB = {
@@ -91,11 +89,9 @@ app.get('/', (req, res) => {
 // RUTAS DE REGISTRO
 app.get('/register', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'register.html')); });
 
-// 🛠️ CORRECCIÓN 1: El teléfono se guarda sin hashear
 app.post('/register', async (req, res) => {
     const { nombre, email, telefono } = req.body; 
     try {
-        // El teléfono se inserta directamente en texto plano, como debe ser.
         await pool.execute(`INSERT INTO usuarios (nombre, email, telefono, fecha_registro) VALUES (?, ?, ?, NOW())`, [nombre, email, telefono]);
         
         res.status(201).send(`<script>alert('¡Registro exitoso! Ya puedes iniciar sesión.'); window.location.href = '/login.html';</script>`);
@@ -114,14 +110,20 @@ app.get('/login', (req, res) => {
     res.redirect('/login.html'); 
 }); 
 
-// 🛠️ CORRECCIÓN 2: El ingreso se valida buscando la combinación nombre + teléfono Y devuelve JSON
+// ✅ RUTA CORREGIDA: Devuelve JSON y se valida con nombre + teléfono. Incluye Logs de Diagnóstico.
 app.post('/login', async (req, res) => {
     const { nombre, telefono } = req.body; 
+    
+    // LOG DE DIAGNÓSTICO: Esto debe aparecer en los logs de Render
+    console.log(`[DIAGNÓSTICO] Intentando iniciar sesión para: ${nombre}`); 
+    
     try {
         // Buscar un usuario que coincida con nombre Y teléfono
         const [rows] = await pool.execute(`SELECT id_usuario FROM usuarios WHERE nombre = ? AND telefono = ?`, [nombre, telefono]);
         
         if (rows.length === 0) {
+            // LOG DE DIAGNÓSTICO: Esto debe aparecer si falla la clave/nombre
+            console.log(`[DIAGNÓSTICO] Falló la autenticación para: ${nombre}`);
             // Devuelve error JSON
             return res.status(401).json({ success: false, error: "Nombre de usuario o clave incorrectos." });
         }
@@ -129,7 +131,10 @@ app.post('/login', async (req, res) => {
         // Success case:
         req.session.userId = rows[0].id_usuario; 
         
-        // ✅ DEVOLVER JSON DE REDIRECCIÓN.
+        // LOG DE DIAGNÓSTICO: Esto debe aparecer si es exitoso
+        console.log(`[DIAGNÓSTICO] Ingreso exitoso para: ${nombre}. Redireccionando.`); 
+        
+        // ✅ DEVOLVER JSON DE REDIRECCIÓN. ESTO SOLUCIONA EL PROBLEMA DE REDIRECCIÓN EN AJAX.
         res.status(200).json({ success: true, redirect: '/inicio' }); 
         
     } catch (error) {

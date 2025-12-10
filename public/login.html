@@ -61,7 +61,6 @@
 
             const form = event.target;
             const formData = new FormData(form);
-            // Convierte FormData a un objeto JSON
             const data = Object.fromEntries(formData.entries());
             const errorMessage = document.getElementById('error-message');
             
@@ -77,22 +76,34 @@
                     body: JSON.stringify(data)
                 });
                 
-                // Intenta leer la respuesta como JSON
+                // 🛑 COMPROBACIÓN ROBUSTA: Verifica que la respuesta sea JSON.
+                // Esto ayuda a detectar si el servidor está devolviendo la página HTML completa (como en el error 304).
+                const contentType = response.headers.get("content-type");
+                if (!contentType || !contentType.includes("application/json")) {
+                    console.error('El servidor no devolvió JSON. Tipo de respuesta:', contentType);
+                    
+                    // Si el servidor nos está devolviendo la página de login (o similar), es un problema de Render/Servidor.
+                    errorMessage.textContent = 'Error de servidor. El servicio de Render puede estar desactualizado o mal configurado. Por favor, revisa los logs de Render.';
+                    errorMessage.classList.remove('d-none'); 
+                    form.reset();
+                    return; 
+                }
+                
+                // 3. Intenta leer la respuesta como JSON
                 const result = await response.json(); 
 
                 if (response.ok && result.success) {
                     // 4. ÉXITO: El servidor respondió { success: true, redirect: '/inicio' }
-                    // FORZAMOS LA REDIRECCIÓN DEL CLIENTE
-                    window.location.href = result.redirect; 
+                    window.location.href = result.redirect; // FORZAMOS LA REDIRECCIÓN
                 } else {
                     // 5. FALLO: El servidor respondió { success: false, error: "..." }
                     errorMessage.textContent = result.error || 'Error desconocido al iniciar sesión.';
                     errorMessage.classList.remove('d-none'); // Muestra el error
-                    form.reset(); // Limpia los campos
+                    form.reset(); // Limpia los campos (el comportamiento que ya veías)
                 }
             } catch (error) {
-                console.error('Error en la conexión:', error);
-                errorMessage.textContent = 'Fallo de conexión con el servidor. Intente más tarde.';
+                console.error('Error de red o JSON inválido:', error);
+                errorMessage.textContent = 'Fallo de conexión con el servidor. Intenta más tarde.';
                 errorMessage.classList.remove('d-none');
             }
         });
