@@ -211,14 +211,6 @@ app.get('/inicio', requireAuth, async (req, res) => {
                     <div class="row">
                         ${canastasHTML.length > 0 ? canastasHTML : '<p class="alert alert-info">No hay canastas predefinidas activas.</p>'}
                     </div>
-                    
-                    <hr class="my-5">
-
-                    <div class="text-end mb-5">
-                        <a href="/checkout" id="btn-checkout" class="btn btn-warning btn-lg mt-3">
-                            Proceder al Pago (Checkout)
-                        </a>
-                    </div>
                 </div>
             </body>
             </html>
