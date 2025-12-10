@@ -8,21 +8,23 @@ const path = require('path');
 const bcrypt = require('bcrypt');
 const session = require('express-session'); 
 const PDFDocument = require('pdfkit'); 
-const MySQLStore = require('express-mysql-session')(session); // Módulo para sesiones en TiDB/MySQL
+const MySQLStore = require('express-mysql-session')(session);
 
 const app = express();
-const port = process.env.PORT || 3000;
+// Usa el puerto que te asigne Render, o 3000 por defecto
+const port = process.env.PORT || 3000; 
 const saltRounds = 10; 
 
 // --- Conexión a la Base de Datos (TiDB Serverless) ---
 let pool;
 try {
     pool = mysql.createPool({
-        // Render lee estas variables de entorno con las credenciales de TiDB
         host: process.env.DB_HOST,
         user: process.env.DB_USER,
         password: process.env.DB_PASSWORD,
         database: process.env.DB_NAME,
+        // CORRECCIÓN CLAVE: Usa DB_PORT (debe ser 4000 en Render)
+        port: process.env.DB_PORT || 3306, 
         waitForConnections: true,
         connectionLimit: 10,
         queueLimit: 0
@@ -39,10 +41,11 @@ const sessionStore = new MySQLStore({
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
-    // Opciones para asegurar la persistencia y limpieza de sesiones expiradas
+    // CORRECCIÓN CLAVE: Usar DB_PORT para sesiones
+    port: process.env.DB_PORT || 3306,
     clearExpired: true,
     checkExpirationInterval: 900000, 
-    expiration: 86400000, // 24 horas
+    expiration: 86400000,
 }, pool);
 
 
@@ -51,36 +54,32 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public'))); 
 
-// Uso del MySQLStore para el manejo de sesiones persistentes
+// Configuración de Express-Session con MySQLStore
 app.use(session({
     secret: process.env.SESSION_SECRET || 'CLAVE_SECRETA_DEL_PROYECTO_ESCOLAR', 
     resave: false,
     saveUninitialized: false,
-    store: sessionStore, // <-- Usa TiDB para guardar la sesión
+    store: sessionStore,
     cookie: { 
         maxAge: 1000 * 60 * 60 * 24,
-        secure: process.env.NODE_ENV === 'production', // true en Render (HTTPS)
+        secure: process.env.NODE_ENV === 'production',
         httpOnly: true 
     } 
 }));
 
 // ----------------------------------------------------
-// MIDDLEWARE DE AUTENTICACIÓN
+// MIDDLEWARE DE AUTENTICACIÓN Y RUTAS PRINCIPALES
 // ----------------------------------------------------
 
 function requireAuth(req, res, next) {
     if (req.session && req.session.userId) {
         return next();
     } else {
-        res.redirect('/login.html'); // Redirige a la página estática de login
+        res.redirect('/login.html');
     }
 }
 
-// ----------------------------------------------------
-// RUTAS DE AUTENTICACIÓN Y PRINCIPALES
-// ----------------------------------------------------
-
-// RUTA RAÍZ CORREGIDA: Evita el "Cannot GET /" y dirige al flujo de inicio/login
+// RUTA RAÍZ CORREGIDA: Evita el "Cannot GET /"
 app.get('/', (req, res) => {
     if (req.session && req.session.userId) {
         return res.redirect('/inicio');
@@ -88,6 +87,7 @@ app.get('/', (req, res) => {
     res.redirect('/login.html'); 
 });
 
+// RUTAS DE REGISTRO
 app.get('/register', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'register.html')); });
 app.post('/register', async (req, res) => {
     const { nombre, email, telefono } = req.body; 
@@ -96,20 +96,26 @@ app.post('/register', async (req, res) => {
         await pool.execute(`INSERT INTO usuarios (nombre, email, telefono, fecha_registro) VALUES (?, ?, ?, NOW())`, [nombre, email, hashedPassword]);
         res.status(201).send(`<script>alert('¡Registro exitoso! Ya puedes iniciar sesión.'); window.location.href = '/login.html';</script>`);
     } catch (error) {
-        res.status(500).send("Error al registrar el usuario.");
+        console.error("FALLO DE REGISTRO:", error); 
+        res.status(500).send("Error interno del servidor al registrar usuario.");
     }
 });
-// CAMBIO: La ruta /login redirige a la página estática
+
+// RUTAS DE LOGIN
 app.get('/login', (req, res) => { 
     if (req.session && req.session.userId) return res.redirect('/inicio'); 
     res.redirect('/login.html'); 
 }); 
+
 app.post('/login', async (req, res) => {
     const { nombre, telefono } = req.body; 
     try {
         const [rows] = await pool.execute(`SELECT id_usuario, telefono FROM usuarios WHERE nombre = ?`, [nombre]);
+        
         if (rows.length === 0) return res.status(401).send("Nombre de usuario o clave incorrectos.");
+        
         const match = await bcrypt.compare(telefono, rows[0].telefono);
+        
         if (match) {
             req.session.userId = rows[0].id_usuario; 
             res.redirect('/inicio'); 
@@ -117,10 +123,25 @@ app.post('/login', async (req, res) => {
             res.status(401).send("Nombre de usuario o clave incorrectos.");
         }
     } catch (error) {
+        // Muestra el error real de conexión/consulta para depuración
+        console.error("FALLO DE AUTENTICACION O CONSULTA:", error); 
         res.status(500).send("Error interno del servidor al iniciar sesión.");
     }
 });
-app.get('/logout', (req, res) => { req.session.destroy(err => { if (err) return res.status(500).send("No se pudo cerrar la sesión."); res.redirect('/login.html'); }); });
+
+// RUTA DE LOGOUT
+app.get('/logout', (req, res) => { 
+    req.session.destroy(err => { 
+        if (err) {
+            console.error("Error al cerrar sesión:", err);
+            return res.status(500).send("No se pudo cerrar la sesión.");
+        }
+        res.redirect('/login.html'); 
+    }); 
+});
+// ----------------------------------------------------
+// FIN DE PARTE 1
+// ----------------------------------------------------
 
 // ----------------------------------------------------
 // RUTAS DE COMPRA (INICIO / CONFIGURACIÓN)
@@ -419,9 +440,13 @@ app.get('/configurar-canasta/:id', requireAuth, async (req, res) => {
         res.status(500).send("Error interno al cargar la configuración de la canasta.");
     }
 });
+// ----------------------------------------------------
+// FIN DE PARTE 2
+// ----------------------------------------------------
 
-
-// RUTA DE CHECKOUT / RESUMEN / PDF / FINALIZAR PEDIDO (El código no cambia)
+// ----------------------------------------------------
+// RUTAS DE PAGO Y PEDIDO
+// ----------------------------------------------------
 
 app.get('/checkout', requireAuth, (req, res) => { res.sendFile(path.join(__dirname, 'public', 'checkout.html')); });
 
@@ -560,3 +585,4 @@ app.post('/finalizar-pedido', requireAuth, async (req, res) => {
 app.listen(port, () => {
     console.log(`Servidor de Canastas de Dulces corriendo en http://localhost:${port}`);
 });
+
