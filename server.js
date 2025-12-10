@@ -1,4 +1,4 @@
-// Cargar variables de entorno (Render las proporciona directamente)
+// Cargar variables de entorno (para Render)
 require('dotenv').config();
 
 const express = require('express');
@@ -11,44 +11,45 @@ const PDFDocument = require('pdfkit');
 const MySQLStore = require('express-mysql-session')(session);
 
 const app = express();
-// Usa el puerto que te asigne Render, o 3000 por defecto
+// Usa el puerto de entorno proporcionado por Render o 3000 por defecto
 const port = process.env.PORT || 3000; 
 const saltRounds = 10; 
 
-// --- Conexión a la Base de Datos (TiDB Serverless) ---
+// --- Configuración de la Base de Datos TiDB Cloud (CON SSL) ---
+const DB_CONFIG_TIDB = {
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    port: process.env.DB_PORT || 4000, // TiDB Serverless usa 4000
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+    // *** CONFIGURACIÓN CRÍTICA PARA TI DB CLOUD ***
+    ssl: { 
+        // Permite la conexión sin necesidad de descargar el archivo .pem
+        // Ya que el firewall está abierto, esto DEBE funcionar.
+        rejectUnauthorized: false 
+    } 
+};
+
 let pool;
 try {
-    pool = mysql.createPool({
-        host: process.env.DB_HOST,
-        user: process.env.DB_USER,
-        password: process.env.DB_PASSWORD,
-        // Usando process.env.DB_NAME, que debe ser 'canastas_dulces'
-        database: process.env.DB_NAME, 
-        port: process.env.DB_PORT || 3306, 
-        // FIX: Habilita SSL para que TiDB no rechace la conexión
-        ssl: { rejectUnauthorized: false }, 
-        waitForConnections: true,
-        connectionLimit: 10,
-        queueLimit: 0
-    });
+    pool = mysql.createPool(DB_CONFIG_TIDB);
     console.log("Conexión a la base de datos TiDB establecida correctamente.");
 } catch (error) {
     console.error("Error al conectar a la base de datos:", error.message);
     process.exit(1); 
 }
 
-// --- Configuración del Almacén de Sesiones en TiDB ---
+// --- Configuración del Almacén de Sesiones en MySQL (TiDB) ---
+// La configuración del store también DEBE usar la conexión SSL.
 const sessionStore = new MySQLStore({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    port: process.env.DB_PORT || 3306,
-    // FIX: Habilita SSL para sesiones
-    ssl: { rejectUnauthorized: false }, 
+    ...DB_CONFIG_TIDB, // Reutiliza la configuración completa, incluyendo SSL
     clearExpired: true,
     checkExpirationInterval: 900000, 
-    expiration: 86400000,
+    expiration: 86400000, 
+    endConnectionOnClose: true 
 }, pool);
 
 
@@ -57,15 +58,16 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public'))); 
 
-// Configuración de Express-Session con MySQLStore
+// Configuración de Express-Session
 app.use(session({
-    secret: process.env.SESSION_SECRET || '@Koalaa20102025', 
+    secret: process.env.SESSION_SECRET || 'CLAVE_SECRETA_POR_DEFECTO', 
     resave: false,
     saveUninitialized: false,
     store: sessionStore,
     cookie: { 
         maxAge: 1000 * 60 * 60 * 24,
-        secure: process.env.NODE_ENV === 'production',
+        // secure: true es recomendable en Render si usas HTTPS, pero false funciona con HTTP.
+        secure: process.env.NODE_ENV === 'production', 
         httpOnly: true 
     } 
 }));
@@ -100,6 +102,10 @@ app.post('/register', async (req, res) => {
         res.status(201).send(`<script>alert('¡Registro exitoso! Ya puedes iniciar sesión.'); window.location.href = '/login.html';</script>`);
     } catch (error) {
         console.error("FALLO DE REGISTRO:", error); 
+        // 1062 es código de duplicado en MySQL (nombre y teléfono únicos)
+        if (error.code === 'ER_DUP_ENTRY') {
+             return res.status(409).send(`<script>alert('Ya existe un usuario con ese nombre y/o teléfono.'); window.location.href = '/register';</script>`);
+        }
         res.status(500).send("Error interno del servidor al registrar usuario.");
     }
 });
@@ -113,7 +119,6 @@ app.get('/login', (req, res) => {
 app.post('/login', async (req, res) => {
     const { nombre, telefono } = req.body; 
     try {
-        // La conexión falla aquí si hay un ECONNREFUSED
         const [rows] = await pool.execute(`SELECT id_usuario, telefono FROM usuarios WHERE nombre = ?`, [nombre]);
         
         if (rows.length === 0) return res.status(401).send("Nombre de usuario o clave incorrectos.");
@@ -127,7 +132,6 @@ app.post('/login', async (req, res) => {
             res.status(401).send("Nombre de usuario o clave incorrectos.");
         }
     } catch (error) {
-        // Muestra el error real de conexión/consulta para depuración
         console.error("FALLO DE AUTENTICACION O CONSULTA:", error); 
         res.status(500).send("Error interno del servidor al iniciar sesión.");
     }
@@ -143,10 +147,6 @@ app.get('/logout', (req, res) => {
         res.redirect('/login.html'); 
     }); 
 });
-// ----------------------------------------------------
-// FIN DE PARTE 1
-// ----------------------------------------------------
-
 // ----------------------------------------------------
 // RUTAS DE COMPRA (INICIO / CONFIGURACIÓN)
 // ----------------------------------------------------
@@ -278,9 +278,6 @@ app.get('/configurar-canasta/:id', requireAuth, async (req, res) => {
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <title>Configurar ${canasta.nombre} | Canastas Mi Alegría</title>
                 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-                <link rel="preconnect" href="https://fonts.googleapis.com">
-                <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-                <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap" rel="stylesheet">
                 <link href="/style.css" rel="stylesheet">
             </head>
             <body>
@@ -445,10 +442,6 @@ app.get('/configurar-canasta/:id', requireAuth, async (req, res) => {
     }
 });
 // ----------------------------------------------------
-// FIN DE PARTE 2
-// ----------------------------------------------------
-
-// ----------------------------------------------------
 // RUTAS DE PAGO Y PEDIDO
 // ----------------------------------------------------
 
@@ -587,8 +580,5 @@ app.post('/finalizar-pedido', requireAuth, async (req, res) => {
 // INICIO DEL SERVIDOR 
 // ----------------------------------------------------
 app.listen(port, () => {
-    console.log(`Servidor de Canastas de Dulces corriendo en http://localhost:${port}`);
+    console.log(`Servidor de Canastas de Dulces corriendo en el puerto ${port}`);
 });
-// ----------------------------------------------------
-// FIN DE PARTE 3 Y DEL ARCHIVO
-// ----------------------------------------------------
