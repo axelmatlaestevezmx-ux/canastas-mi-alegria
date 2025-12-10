@@ -23,8 +23,9 @@ try {
         user: process.env.DB_USER,
         password: process.env.DB_PASSWORD,
         database: process.env.DB_NAME,
-        // CORRECCIÓN CLAVE: Usa DB_PORT (debe ser 4000 en Render)
         port: process.env.DB_PORT || 3306, 
+        // CORRECCIÓN SSL CLAVE: Permite conexión segura a TiDB
+        ssl: { rejectUnauthorized: false }, 
         waitForConnections: true,
         connectionLimit: 10,
         queueLimit: 0
@@ -41,8 +42,9 @@ const sessionStore = new MySQLStore({
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
-    // CORRECCIÓN CLAVE: Usar DB_PORT para sesiones
     port: process.env.DB_PORT || 3306,
+    // CORRECCIÓN SSL CLAVE: Permite conexión segura para sesiones
+    ssl: { rejectUnauthorized: false }, 
     clearExpired: true,
     checkExpirationInterval: 900000, 
     expiration: 86400000,
@@ -79,7 +81,7 @@ function requireAuth(req, res, next) {
     }
 }
 
-// RUTA RAÍZ CORREGIDA: Evita el "Cannot GET /"
+// RUTA RAÍZ CORREGIDA
 app.get('/', (req, res) => {
     if (req.session && req.session.userId) {
         return res.redirect('/inicio');
@@ -585,4 +587,6 @@ app.post('/finalizar-pedido', requireAuth, async (req, res) => {
 app.listen(port, () => {
     console.log(`Servidor de Canastas de Dulces corriendo en http://localhost:${port}`);
 });
-
+// ----------------------------------------------------
+// FIN DE PARTE 3 Y DEL ARCHIVO
+// ----------------------------------------------------
