@@ -59,7 +59,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Configuración de Express-Session con MySQLStore
 app.use(session({
-    secret: process.env.SESSION_SECRET || 'CLAVE_SECRETA_DEL_PROYECTO_ESCOLAR', 
+    secret: process.env.SESSION_SECRET || '@Koalaa20102025', 
     resave: false,
     saveUninitialized: false,
     store: sessionStore,
