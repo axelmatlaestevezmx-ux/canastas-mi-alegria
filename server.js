@@ -22,9 +22,10 @@ try {
         host: process.env.DB_HOST,
         user: process.env.DB_USER,
         password: process.env.DB_PASSWORD,
-        database: process.env.DB_NAME,
+        // Usando process.env.DB_NAME, que debe ser 'canastas_dulces'
+        database: process.env.DB_NAME, 
         port: process.env.DB_PORT || 3306, 
-        // CORRECCIÓN SSL CLAVE: Permite conexión segura a TiDB
+        // FIX: Habilita SSL para que TiDB no rechace la conexión
         ssl: { rejectUnauthorized: false }, 
         waitForConnections: true,
         connectionLimit: 10,
@@ -43,7 +44,7 @@ const sessionStore = new MySQLStore({
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
     port: process.env.DB_PORT || 3306,
-    // CORRECCIÓN SSL CLAVE: Permite conexión segura para sesiones
+    // FIX: Habilita SSL para sesiones
     ssl: { rejectUnauthorized: false }, 
     clearExpired: true,
     checkExpirationInterval: 900000, 
@@ -112,6 +113,7 @@ app.get('/login', (req, res) => {
 app.post('/login', async (req, res) => {
     const { nombre, telefono } = req.body; 
     try {
+        // La conexión falla aquí si hay un ECONNREFUSED
         const [rows] = await pool.execute(`SELECT id_usuario, telefono FROM usuarios WHERE nombre = ?`, [nombre]);
         
         if (rows.length === 0) return res.status(401).send("Nombre de usuario o clave incorrectos.");
