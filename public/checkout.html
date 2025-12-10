@@ -11,7 +11,7 @@
     <link href="/style.css" rel="stylesheet">
 </head>
 <body>
-    <header class="main-header mb-5 d-flex justify-content-between align-items-center p-3">
+    <header class="main-header mb-3 d-flex justify-content-between align-items-center p-3">
         <h1>Canastas Mi Alegría 🍬</h1>
         <div>
             <a href="/logout" class="btn btn-logout btn-sm">
@@ -20,36 +20,36 @@
         </div>
     </header>
 
-    <div class="container">
-        <a href="/inicio" class="btn btn-secondary mb-4">← Volver a Canastas</a>
+    <div class="container my-4">
+        <a href="/inicio" class="btn btn-secondary mb-3">← Volver a Canastas</a>
         <h1 class="mb-4">💳 Finalizar Compra (Checkout)</h1>
 
-        <div class="row">
-            <div class="col-md-5">
-                <div class="card p-4 mb-4">
+                <div class="row d-flex align-items-start offset-md-1"> 
+                        <div class="col-md-5">
+                <div class="card p-3 mb-4">
                     <h4 class="mb-3">🛒 Resumen de tu Pedido</h4>
-                    <ul class="list-group mb-3" id="cart-items">
+                    <ul class="list-group mb-2" id="cart-items">
                                             </ul>
                     <hr>
                     <h3 class="text-end">Total: MX$ <span id="cart-total">0.00</span></h3>
                 </div>
             </div>
 
-            <div class="col-md-7">
-                <form id="checkout-form" class="card p-4">
+                        <div class="col-md-5">
+                <form id="checkout-form" class="card p-3">
                     <h4 class="mb-3">📍 Dirección y Contacto</h4>
                     <div class="mb-3">
                         <label for="direccion_entrega" class="form-label">Dirección de Entrega Completa</label>
                         <textarea class="form-control" id="direccion_entrega" rows="3" required></textarea>
                     </div>
 
-                    <h4 class="mt-4 mb-3">💬 Mensaje de Tarjeta (Opcional)</h4>
+                    <h4 class="mt-3 mb-3">💬 Mensaje de Tarjeta (Opcional)</h4>
                     <div class="mb-3">
                         <label for="mensaje_tarjeta" class="form-label">Mensaje para la tarjeta de regalo</label>
                         <textarea class="form-control" id="mensaje_tarjeta" rows="2" placeholder="Ej: ¡Feliz cumpleaños, te quiero mucho!"></textarea>
                     </div>
 
-                    <h4 class="mt-4 mb-3">💵 Seleccionar Tipo de Pago</h4>
+                    <h4 class="mt-3 mb-3">💵 Seleccionar Tipo de Pago</h4>
                     <div class="mb-3">
                         <select class="form-select" id="id_tipo_pago" required>
                             <option value="">Selecciona un método de pago</option>
@@ -68,18 +68,11 @@
     </div>
 
     <script>
-        // ✅ FUNCIÓN NUEVA: Permite eliminar un ítem del carrito por su ID
         window.removeItem = function(itemId) {
             if (confirm('¿Estás seguro de que deseas eliminar este artículo del carrito?')) {
                 let cart = JSON.parse(sessionStorage.getItem('currentCart') || '[]');
-                
-                // Filtra el carrito para mantener todos los ítems cuyo ID no coincida
-                // Recordatorio: el item.id es el Date.now() que se asigna al añadir.
                 cart = cart.filter(item => item.id !== itemId); 
-                
                 sessionStorage.setItem('currentCart', JSON.stringify(cart));
-                
-                // Vuelve a dibujar el carrito con la nueva lista
                 loadCart(); 
             }
         };
@@ -94,7 +87,6 @@
             let total = 0;
 
             if (!cartString || cartString === '[]') {
-                // Mensaje si el carrito está vacío
                 const emptyItem = document.createElement('li');
                 emptyItem.className = 'list-group-item text-danger';
                 emptyItem.textContent = 'Carrito vacío';
@@ -121,7 +113,6 @@
                     nombreItem += ` <span class="badge bg-primary rounded-pill">+${totalDulces} extras</span>`;
                 }
 
-                // ✅ CAMBIO CRÍTICO: Añadir el botón de borrar con la función removeItem(item.id)
                 listItem.innerHTML = `
                     <div class="d-flex align-items-center">
                         <button class="btn btn-sm btn-danger me-2" onclick="removeItem(${item.id})">
