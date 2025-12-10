@@ -10,6 +10,11 @@ const PDFDocument = require('pdfkit');
 const MySQLStore = require('express-mysql-session')(session);
 
 const app = express();
+
+// ✅ CORRECCIÓN CRÍTICA: NECESARIO PARA RENDER/PROXY
+// Esto soluciona el problema de que la sesión se pierda inmediatamente después del login.
+app.set('trust proxy', 1); 
+
 // Usa el puerto de entorno proporcionado por Render o 3000 por defecto
 const port = process.env.PORT || 3000; 
 
@@ -74,6 +79,8 @@ function requireAuth(req, res, next) {
     if (req.session && req.session.userId) {
         return next();
     } else {
+        // Log para saber si falla la autenticación en /inicio
+        console.log(`[DIAGNÓSTICO] Acceso a ruta protegida fallido. Sesión ID: ${req.session.userId}`);
         res.redirect('/login.html');
     }
 }
@@ -110,36 +117,31 @@ app.get('/login', (req, res) => {
     res.redirect('/login.html'); 
 }); 
 
-// ✅ RUTA CORREGIDA: Devuelve JSON y se valida con nombre + teléfono. Incluye Logs de Diagnóstico.
+// RUTA POST DE LOGIN
 app.post('/login', async (req, res) => {
     const { nombre, telefono } = req.body; 
     
-    // LOG DE DIAGNÓSTICO: Esto debe aparecer en los logs de Render
+    // LOG DE DIAGNÓSTICO
     console.log(`[DIAGNÓSTICO] Intentando iniciar sesión para: ${nombre}`); 
     
     try {
-        // Buscar un usuario que coincida con nombre Y teléfono
         const [rows] = await pool.execute(`SELECT id_usuario FROM usuarios WHERE nombre = ? AND telefono = ?`, [nombre, telefono]);
         
         if (rows.length === 0) {
-            // LOG DE DIAGNÓSTICO: Esto debe aparecer si falla la clave/nombre
             console.log(`[DIAGNÓSTICO] Falló la autenticación para: ${nombre}`);
-            // Devuelve error JSON
             return res.status(401).json({ success: false, error: "Nombre de usuario o clave incorrectos." });
         }
         
-        // Success case:
+        // Success case: Crea la sesión y establece la cookie (esto requiere el trust proxy)
         req.session.userId = rows[0].id_usuario; 
         
-        // LOG DE DIAGNÓSTICO: Esto debe aparecer si es exitoso
         console.log(`[DIAGNÓSTICO] Ingreso exitoso para: ${nombre}. Redireccionando.`); 
         
-        // ✅ DEVOLVER JSON DE REDIRECCIÓN. ESTO SOLUCIONA EL PROBLEMA DE REDIRECCIÓN EN AJAX.
+        // DEVOLVER JSON DE REDIRECCIÓN.
         res.status(200).json({ success: true, redirect: '/inicio' }); 
         
     } catch (error) {
         console.error("FALLO DE AUTENTICACION O CONSULTA:", error); 
-        // Devuelve error JSON en caso de error de servidor
         res.status(500).json({ success: false, error: "Error interno del servidor al iniciar sesión." });
     }
 });
