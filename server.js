@@ -1,4 +1,4 @@
-// Cargar variables de entorno (como las credenciales de la BD)
+// Cargar variables de entorno (Render las proporciona directamente)
 require('dotenv').config();
 
 const express = require('express');
@@ -8,26 +8,17 @@ const path = require('path');
 const bcrypt = require('bcrypt');
 const session = require('express-session'); 
 const PDFDocument = require('pdfkit'); 
+const MySQLStore = require('express-mysql-session')(session); // Módulo para sesiones en TiDB/MySQL
 
 const app = express();
 const port = process.env.PORT || 3000;
 const saltRounds = 10; 
 
-// --- Middlewares y Configuración ---
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, 'public')));
-app.use(session({
-    secret: 'CLAVE_SECRETA_DEL_PROYECTO_ESCOLAR_DE_DULCES_SEGURO_1A2B3C', 
-    resave: false,
-    saveUninitialized: false,
-    cookie: { maxAge: 1000 * 60 * 60 * 24 }
-}));
-
-// --- Conexión a la Base de Datos ---
+// --- Conexión a la Base de Datos (TiDB Serverless) ---
 let pool;
 try {
     pool = mysql.createPool({
+        // Render lee estas variables de entorno con las credenciales de TiDB
         host: process.env.DB_HOST,
         user: process.env.DB_USER,
         password: process.env.DB_PASSWORD,
@@ -36,23 +27,66 @@ try {
         connectionLimit: 10,
         queueLimit: 0
     });
-    console.log("Conexión a la base de datos establecida correctamente.");
+    console.log("Conexión a la base de datos TiDB establecida correctamente.");
 } catch (error) {
     console.error("Error al conectar a la base de datos:", error.message);
     process.exit(1); 
 }
 
+// --- Configuración del Almacén de Sesiones en TiDB ---
+const sessionStore = new MySQLStore({
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    // Opciones para asegurar la persistencia y limpieza de sesiones expiradas
+    clearExpired: true,
+    checkExpirationInterval: 900000, 
+    expiration: 86400000, // 24 horas
+}, pool);
+
+
+// --- Middlewares y Configuración ---
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
+app.use(express.static(path.join(__dirname, 'public'))); 
+
+// Uso del MySQLStore para el manejo de sesiones persistentes
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'CLAVE_SECRETA_DEL_PROYECTO_ESCOLAR', 
+    resave: false,
+    saveUninitialized: false,
+    store: sessionStore, // <-- Usa TiDB para guardar la sesión
+    cookie: { 
+        maxAge: 1000 * 60 * 60 * 24,
+        secure: process.env.NODE_ENV === 'production', // true en Render (HTTPS)
+        httpOnly: true 
+    } 
+}));
+
 // ----------------------------------------------------
-// MIDDLEWARE Y RUTAS DE AUTENTICACIÓN
+// MIDDLEWARE DE AUTENTICACIÓN
 // ----------------------------------------------------
 
 function requireAuth(req, res, next) {
     if (req.session && req.session.userId) {
         return next();
     } else {
-        res.redirect('/login');
+        res.redirect('/login.html'); // Redirige a la página estática de login
     }
 }
+
+// ----------------------------------------------------
+// RUTAS DE AUTENTICACIÓN Y PRINCIPALES
+// ----------------------------------------------------
+
+// RUTA RAÍZ CORREGIDA: Evita el "Cannot GET /" y dirige al flujo de inicio/login
+app.get('/', (req, res) => {
+    if (req.session && req.session.userId) {
+        return res.redirect('/inicio');
+    }
+    res.redirect('/login.html'); 
+});
 
 app.get('/register', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'register.html')); });
 app.post('/register', async (req, res) => {
@@ -60,12 +94,16 @@ app.post('/register', async (req, res) => {
     try {
         const hashedPassword = await bcrypt.hash(telefono, saltRounds);
         await pool.execute(`INSERT INTO usuarios (nombre, email, telefono, fecha_registro) VALUES (?, ?, ?, NOW())`, [nombre, email, hashedPassword]);
-        res.status(201).send(`<script>alert('¡Registro exitoso! Ya puedes iniciar sesión.'); window.location.href = '/login';</script>`);
+        res.status(201).send(`<script>alert('¡Registro exitoso! Ya puedes iniciar sesión.'); window.location.href = '/login.html';</script>`);
     } catch (error) {
         res.status(500).send("Error al registrar el usuario.");
     }
 });
-app.get('/login', (req, res) => { if (req.session && req.session.userId) return res.redirect('/inicio'); res.sendFile(path.join(__dirname, 'public', 'login.html')); });
+// CAMBIO: La ruta /login redirige a la página estática
+app.get('/login', (req, res) => { 
+    if (req.session && req.session.userId) return res.redirect('/inicio'); 
+    res.redirect('/login.html'); 
+}); 
 app.post('/login', async (req, res) => {
     const { nombre, telefono } = req.body; 
     try {
@@ -82,7 +120,7 @@ app.post('/login', async (req, res) => {
         res.status(500).send("Error interno del servidor al iniciar sesión.");
     }
 });
-app.get('/logout', (req, res) => { req.session.destroy(err => { if (err) return res.status(500).send("No se pudo cerrar la sesión."); res.redirect('/login'); }); });
+app.get('/logout', (req, res) => { req.session.destroy(err => { if (err) return res.status(500).send("No se pudo cerrar la sesión."); res.redirect('/login.html'); }); });
 
 // ----------------------------------------------------
 // RUTAS DE COMPRA (INICIO / CONFIGURACIÓN)
@@ -293,7 +331,6 @@ app.get('/configurar-canasta/:id', requireAuth, async (req, res) => {
                             dulcesActuales += item.cantidad;
 
                             const listItem = document.createElement('li');
-                            // Se ajusta la clase para usar el estilo pastel
                             listItem.className = 'list-group-item d-flex justify-content-between align-items-center list-pastel-item';
                             listItem.innerHTML = \`
                                 \${item.nombre} (x\${item.cantidad})
@@ -384,14 +421,13 @@ app.get('/configurar-canasta/:id', requireAuth, async (req, res) => {
 });
 
 
-// RUTA DE CHECKOUT / RESUMEN / PDF / FINALIZAR PEDIDO (Sin cambios funcionales mayores, solo la redirección final)
+// RUTA DE CHECKOUT / RESUMEN / PDF / FINALIZAR PEDIDO (El código no cambia)
 
 app.get('/checkout', requireAuth, (req, res) => { res.sendFile(path.join(__dirname, 'public', 'checkout.html')); });
 
 app.get('/resumen', requireAuth, (req, res) => { res.sendFile(path.join(__dirname, 'public', 'resumen.html')); });
 
 app.get('/ticket-pdf/:id', requireAuth, async (req, res) => {
-    // ... (El código de la generación del PDF se mantiene, ya que fue corregido y usa MX$) ...
     const pedidoId = req.params.id;
     const userId = req.session.userId;
     let connection;
@@ -415,7 +451,7 @@ app.get('/ticket-pdf/:id', requireAuth, async (req, res) => {
         res.setHeader('Content-type', 'application/pdf');
         doc.pipe(res);
 
-        // Contenido del Ticket (Asegurarse de que use MX$ para consistencia)
+        // Contenido del Ticket
         doc.fontSize(25).text('TICKET DE COMPRA | Canastas Mi Alegría', { align: 'center' }).moveDown(1);
         doc.fontSize(12).text(`Pedido N°: ${pedidoId}`, { continued: true })
             .text(`Fecha: ${new Date(pedido.fecha_pedido).toLocaleDateString()}`, { align: 'right' }).moveDown(0.5);
@@ -500,13 +536,12 @@ app.post('/finalizar-pedido', requireAuth, async (req, res) => {
 
         await connection.commit(); 
         
-        // Se añade la propiedad "redirectBack" para que el frontend sepa a dónde volver.
         res.status(200).json({ 
             success: true, 
             message: "Pedido procesado con éxito.",
             pedidoId: pedidoId,
             redirectUrl: `/ticket-pdf/${pedidoId}`,
-            redirectBack: '/inicio' // <--- REDIRECCIÓN AL INICIO TRAS LA DESCARGA
+            redirectBack: '/inicio'
         });
 
     } catch (error) {
