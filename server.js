@@ -5,7 +5,7 @@ const express = require('express');
 const mysql = require('mysql2/promise');
 const bodyParser = require('body-parser');
 const path = require('path');
-const bcrypt = require('bcrypt'); // Se mantiene la importación, pero se ignora en la lógica de teléfono
+const bcrypt = require('bcrypt');
 const session = require('express-session'); 
 const PDFDocument = require('pdfkit'); 
 const MySQLStore = require('express-mysql-session')(session);
@@ -13,7 +13,7 @@ const MySQLStore = require('express-mysql-session')(session);
 const app = express();
 // Usa el puerto de entorno proporcionado por Render o 3000 por defecto
 const port = process.env.PORT || 3000; 
-const saltRounds = 10; // Se mantiene la constante, pero se ignora
+const saltRounds = 10; 
 
 // --- Configuración de la Base de Datos TiDB Cloud (CON SSL) ---
 const DB_CONFIG_TIDB = {
@@ -91,12 +91,11 @@ app.get('/', (req, res) => {
 // RUTAS DE REGISTRO
 app.get('/register', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'register.html')); });
 
-// 🛠️ CORRECCIÓN CLAVE 1: El teléfono se guarda sin hashear
+// 🛠️ CORRECCIÓN 1: El teléfono se guarda sin hashear
 app.post('/register', async (req, res) => {
     const { nombre, email, telefono } = req.body; 
     try {
-        // ❌ Antes: const hashedPassword = await bcrypt.hash(telefono, saltRounds);
-        // ✅ Ahora: El teléfono se inserta directamente en texto plano
+        // El teléfono se inserta directamente en texto plano, como debe ser.
         await pool.execute(`INSERT INTO usuarios (nombre, email, telefono, fecha_registro) VALUES (?, ?, ?, NOW())`, [nombre, email, telefono]);
         
         res.status(201).send(`<script>alert('¡Registro exitoso! Ya puedes iniciar sesión.'); window.location.href = '/login.html';</script>`);
@@ -115,25 +114,28 @@ app.get('/login', (req, res) => {
     res.redirect('/login.html'); 
 }); 
 
-// 🛠️ CORRECCIÓN CLAVE 2: El ingreso se valida buscando la combinación nombre + teléfono
+// 🛠️ CORRECCIÓN 2: El ingreso se valida buscando la combinación nombre + teléfono Y devuelve JSON
 app.post('/login', async (req, res) => {
     const { nombre, telefono } = req.body; 
     try {
-        // ✅ CORRECCIÓN: Busca directamente un usuario que coincida con nombre Y teléfono
+        // Buscar un usuario que coincida con nombre Y teléfono
         const [rows] = await pool.execute(`SELECT id_usuario FROM usuarios WHERE nombre = ? AND telefono = ?`, [nombre, telefono]);
         
         if (rows.length === 0) {
-            // No se encontró coincidencia con nombre y teléfono
-            return res.status(401).send("Nombre de usuario o clave incorrectos.");
+            // Devuelve error JSON
+            return res.status(401).json({ success: false, error: "Nombre de usuario o clave incorrectos." });
         }
         
-        // Si hay una fila, las credenciales son correctas
+        // Success case:
         req.session.userId = rows[0].id_usuario; 
-        res.redirect('/inicio'); 
+        
+        // ✅ DEVOLVER JSON DE REDIRECCIÓN.
+        res.status(200).json({ success: true, redirect: '/inicio' }); 
         
     } catch (error) {
         console.error("FALLO DE AUTENTICACION O CONSULTA:", error); 
-        res.status(500).send("Error interno del servidor al iniciar sesión.");
+        // Devuelve error JSON en caso de error de servidor
+        res.status(500).json({ success: false, error: "Error interno del servidor al iniciar sesión." });
     }
 });
 
