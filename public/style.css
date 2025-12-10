@@ -1,0 +1,104 @@
+/* Archivo: public/style.css */
+
+/* --- Paleta de Colores Pastel y Armoniosa --- */
+:root {
+    --color-fondo: #f5f5f5; /* Blanco muy suave */
+    --color-pastel-rosa: #FFC0CB; /* Rosa Chicle */
+    --color-pastel-azul: #ADD8E6; /* Azul Cielo */
+    --color-pastel-verde: #90EE90; /* Verde Menta */
+    --color-pastel-lila: #D8BFD8; /* Lila suave */
+    --color-texto-oscuro: #333333;
+    --color-texto-claro: #FFFFFF;
+    --radius-grande: 12px;
+    --radius-pequeno: 6px;
+}
+
+body {
+    background-color: var(--color-fondo);
+    font-family: 'Poppins', sans-serif; 
+    color: var(--color-texto-oscuro);
+}
+
+/* --- Encabezado Principal y Títulos --- */
+.main-header {
+    background-color: var(--color-pastel-lila) !important;
+    color: var(--color-texto-oscuro);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+.main-header h1 {
+    color: var(--color-texto-oscuro);
+    font-weight: 700;
+}
+
+h1, h2, h3, h4 {
+    color: var(--color-texto-oscuro);
+    font-weight: 600;
+}
+
+/* --- Botones --- */
+.btn {
+    border-radius: var(--radius-pequeno);
+    font-weight: 600;
+    transition: all 0.2s ease-in-out;
+}
+
+/* Botón Primario (Añadir/Configurar) */
+.btn-primary {
+    background-color: var(--color-pastel-azul) !important;
+    border-color: var(--color-pastel-azul) !important;
+    color: var(--color-texto-oscuro) !important;
+}
+.btn-primary:hover {
+    background-color: #90C0D0 !important;
+    transform: translateY(-1px);
+}
+
+/* Botón de Éxito (Confirmar/Finalizar) */
+.btn-success {
+    background-color: var(--color-pastel-verde) !important;
+    border-color: var(--color-pastel-verde) !important;
+    color: var(--color-texto-oscuro) !important;
+}
+.btn-success:hover {
+    background-color: #80D080 !important;
+}
+
+/* Botón de Advertencia (Checkout) */
+.btn-warning {
+    background-color: var(--color-pastel-rosa) !important;
+    border-color: var(--color-pastel-rosa) !important;
+    color: var(--color-texto-oscuro) !important;
+}
+.btn-warning:hover {
+    background-color: #E0A0B0 !important;
+}
+
+/* Botón de Logout */
+.btn-logout {
+    background-color: #FF6347 !important; /* Rojo Tomate (Contraste suave) */
+    border-color: #FF6347 !important;
+    color: var(--color-texto-claro) !important;
+}
+
+/* --- Tarjetas, Inputs y Listas --- */
+.card {
+    border: none;
+    border-radius: var(--radius-grande);
+    box-shadow: 0 6px 15px rgba(0, 0, 0, 0.08); 
+}
+
+.form-control, .form-select, .list-group-item {
+    border-radius: var(--radius-pequeno);
+    border: 1px solid #ddd;
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: var(--color-pastel-azul);
+    box-shadow: 0 0 0 0.25rem rgba(173, 216, 230, 0.5); /* Sombra suave para el foco */
+}
+
+/* Ítems destacados en la lista (personalización) */
+.list-pastel-item {
+    background-color: #fff0f5; /* Rosa muy pálido para destacar */
+}

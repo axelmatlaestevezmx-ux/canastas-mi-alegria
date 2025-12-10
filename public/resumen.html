@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resumen del Pedido | Canastas Mi Alegría</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap" rel="stylesheet">
+    <link href="/style.css" rel="stylesheet">
+</head>
+<body>
+    <header class="main-header mb-5 d-flex justify-content-between align-items-center p-3">
+        <h1>Canastas Mi Alegría 🍬</h1>
+        <div>
+            <a href="/logout" class="btn btn-logout btn-sm">
+                Cerrar Sesión (Salir)
+            </a>
+        </div>
+    </header>
+
+    <div class="container">
+        <h1 class="mb-4">✅ Resumen y Finalización del Pedido</h1>
+        <p class="lead">Verifica los detalles antes de finalizar la compra.</p>
+
+        <div class="row">
+            <div class="col-md-7">
+                <div class="card p-4 mb-4">
+                    <h4 class="mb-3">🛒 Detalle de Artículos</h4>
+                    <ul class="list-group" id="resumen-items">
+                        <li class="list-group-item text-danger">El carrito está vacío o faltan datos.</li>
+                    </ul>
+                </div>
+                
+                <div class="card p-4">
+                    <h4 class="mb-3">📍 Datos de Envío y Regalo</h4>
+                    <p><strong>Dirección:</strong> <span id="resumen-direccion"></span></p>
+                    <p><strong>Mensaje:</strong> <span id="resumen-mensaje"></span></p>
+                </div>
+            </div>
+            
+            <div class="col-md-5">
+                <div class="card p-4">
+                    <h4 class="mb-3">💵 Información del Pago</h4>
+                    <p>Método Seleccionado: <strong id="resumen-metodo-pago"></strong></p>
+                    <hr>
+                    <h3 class="mt-3">TOTAL FINAL: MX$ <span id="total-final-resumen">0.00</span></h3>
+                    
+                    <button class="btn btn-success btn-lg mt-4" onclick="finalizarPedido()">
+                        Finalizar Pedido y Generar Ticket PDF
+                    </button>
+                    <div id="mensaje-final" class="mt-3"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', loadSummary);
+        
+        let finalCart = [];
+        let finalTotal = 0;
+        let finalData = {};
+
+        function loadSummary() {
+            const cartString = sessionStorage.getItem('currentCart');
+            finalData.id_tipo_pago = sessionStorage.getItem('id_tipo_pago');
+            finalData.metodo_pago_nombre = sessionStorage.getItem('metodo_pago_nombre');
+            finalData.direccion_entrega = sessionStorage.getItem('direccion_entrega');
+            finalData.mensaje_tarjeta = sessionStorage.getItem('mensaje_tarjeta');
+            
+            if (!cartString || !finalData.id_tipo_pago || !finalData.direccion_entrega) {
+                alert("Faltan datos del carrito o del checkout. Volviendo al checkout.");
+                window.location.href = '/checkout';
+                return;
+            }
+
+            finalCart = JSON.parse(cartString);
+            
+            document.getElementById('resumen-metodo-pago').textContent = finalData.metodo_pago_nombre;
+            document.getElementById('resumen-direccion').textContent = finalData.direccion_entrega;
+            document.getElementById('resumen-mensaje').textContent = finalData.mensaje_tarjeta || 'Ninguno';
+
+            const list = document.getElementById('resumen-items');
+            list.innerHTML = '';
+            finalTotal = 0;
+
+            finalCart.forEach(item => {
+                const itemTotal = item.precio_final || (item.precio * item.cantidad);
+                finalTotal += itemTotal;
+                
+                let detalleExtra = '';
+                if (item.tipo === 'Canasta_Configurada' && item.detalle_personalizado && item.detalle_personalizado.length > 0) {
+                    const totalDulces = item.detalle_personalizado.reduce((acc, d) => acc + d.cantidad, 0);
+                    // Usamos la clase list-pastel-item para el estilo
+                    detalleExtra = `<small class="d-block list-pastel-item p-1 mt-1 rounded">(${totalDulces} dulces extra por MX$ ${item.costo_extra.toFixed(2)})</small>`;
+                }
+
+                const listItem = document.createElement('li');
+                listItem.className = 'list-group-item';
+                listItem.innerHTML = `
+                    <div class="d-flex justify-content-between">
+                        <strong>${item.nombre} (x${item.cantidad})</strong>
+                        <span>MX$ ${itemTotal.toFixed(2)}</span>
+                    </div>
+                    ${detalleExtra}
+                `;
+                list.appendChild(listItem);
+            });
+
+            document.getElementById('total-final-resumen').textContent = finalTotal.toFixed(2);
+        }
+
+        function finalizarPedido() {
+            const btn = document.querySelector('.btn-success');
+            btn.disabled = true;
+            btn.textContent = 'Procesando...';
+            
+            const dataToSend = {
+                total: finalTotal,
+                id_tipo_pago: finalData.id_tipo_pago,
+                direccion_entrega: finalData.direccion_entrega,
+                mensaje_tarjeta: finalData.mensaje_tarjeta,
+                items: finalCart 
+            };
+
+            fetch('/finalizar-pedido', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(dataToSend)
+            })
+            .then(res => res.json())
+            .then(data => {
+                const msgBox = document.getElementById('mensaje-final');
+                if (data.success) {
+                    // 1. Muestra mensaje y limpia el carrito
+                    msgBox.innerHTML = `<div class="alert alert-success">¡Pedido #${data.pedidoId} creado! Iniciando descarga y volviendo...</div>`;
+                    sessionStorage.clear(); 
+                    
+                    // 2. Inicia la descarga
+                    if (data.redirectUrl) {
+                        // Navegamos al PDF para forzar la descarga
+                        window.location.href = data.redirectUrl; 
+                        
+                        // 3. Después de un breve retraso (para dar tiempo a que se inicie la descarga), 
+                        // redirigimos al inicio como se solicitó
+                        setTimeout(() => {
+                             window.location.href = data.redirectBack; // Redirige a /inicio
+                        }, 2000); 
+                    }
+                    
+                    btn.style.display = 'none'; 
+                    
+                } else {
+                    msgBox.innerHTML = `<div class="alert alert-danger">Error al procesar el pedido: ${data.message}</div>`;
+                    btn.disabled = false;
+                    btn.textContent = 'Finalizar Pedido y Generar Ticket PDF';
+                }
+            })
+            .catch(error => {
+                console.error('Fetch error:', error);
+                document.getElementById('mensaje-final').innerHTML = '<div class="alert alert-danger">Error de comunicación con el servidor.</div>';
+                btn.disabled = false;
+                btn.textContent = 'Finalizar Pedido y Generar Ticket PDF';
+            });
+        }
+    </script>
+</body>
+</html>
